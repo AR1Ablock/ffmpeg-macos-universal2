@@ -1,0 +1,70 @@
+name: Build Universal FFmpeg macOS (x64 + arm64)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ffmpeg_version:
+        description: 'FFmpeg version (default 8.0, e.g. 7.1 or 8.0)'
+        required: false
+        default: '8.0'
+        type: string
+
+permissions:
+  contents: write   # needed to create release
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: 🛠️ Setup macOS environment (like your reference script)
+        run: |
+          echo "macOS runner ready"
+          brew update --quiet
+          xcode-select -p
+          echo "✅ Xcode CLT & Homebrew pre-installed on GitHub macos-latest"
+
+      - name: 📥 Clone WayneKoorts universal builder
+        run: |
+          git clone --depth 1 https://github.com/WayneKoorts/ffmpeg-macos-universal-binary-builder.git builder
+          cd builder
+
+      - name: 🚀 Run the universal build script (exactly your target)
+        run: |
+          cd builder
+          export FFMPEG_VERSION=${{ inputs.ffmpeg_version }}
+          ./build-ffmpeg.sh
+          echo "✅ Build finished!"
+          lipo -info output/ffmpeg
+          lipo -info output/ffprobe
+
+      - name: 📦 Package the single universal binaries
+        run: |
+          cd builder
+          mkdir -p artifact
+          cp output/ffmpeg output/ffprobe artifact/
+          cd artifact
+          zip -9 ../ffmpeg-universal-macos.zip ffmpeg ffprobe
+          ls -lh ../ffmpeg-universal-macos.zip
+
+      - name: 📤 Upload as workflow artifact (backup)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Universal-FFmpeg-Binaries
+          path: builder/ffmpeg-universal-macos.zip
+
+      - name: 🚀 Create GitHub Release + attach your binary
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Universal FFmpeg (built ${{ github.run_number }})
+          body: |
+            ✅ One single universal binary (x86_64 + arm64)  
+            Built with WayneKoorts script + FFmpeg ${{ inputs.ffmpeg_version }}  
+            Fully static • Rich codecs • Runs natively on Intel & Apple Silicon  
+            Triggered manually • GitHub Actions macos-latest
+          files: builder/ffmpeg-universal-macos.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
